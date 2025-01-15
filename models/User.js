@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-
+import crypto from "crypto";
 const userSchema=new mongoose.Schema({
     name:{
         type:String,
@@ -19,9 +19,16 @@ const userSchema=new mongoose.Schema({
         enum:["admin","faculty","student"],
         default:"student"
     },
+    resetPasswordToken:{
+        type:String,
+    },
+    resetPasswordExpires:{
+        type:Date,
+    },
 },{
     timestamps:true
 });
 
 const User=mongoose.model("User",userSchema);
 export default User;
+
