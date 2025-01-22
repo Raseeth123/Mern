@@ -49,9 +49,27 @@ export const forgotPassword = async (req, res) => {
     const mailOptions = {
       from: process.env.EMAIL,
       to: email,
-      subject: "Password Reset Request",
-      text: `Click to reset password: ${resetURL}`,
+      subject: "Reset Your Password - EduSpace",
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
+          <h2 style="color: #444; font-weight: bold;">Password Reset Request</h2>
+          <p><strong>Dear User,</strong></p>
+          <p><strong>We received a request to reset the password for your account. If you made this request, please click the button below to reset your password:</strong></p>
+          <div style="text-align: center; margin: 20px 0;">
+            <a href="${resetURL}" style="display: inline-block; padding: 10px 20px; font-size: 16px; font-weight: bold; color: #fff; background-color: #007BFF; text-decoration: none; border-radius: 4px;">Reset Password</a>
+          </div>
+          <p><strong>If the button above doesn’t work, click the link below:</strong></p>
+          <p style="word-wrap: break-word; font-weight: bold; color: #007BFF;">${resetURL}</p>
+          <p><strong>If you did not request this password reset, please ignore this email. This link will expire shortly for your security.</strong></p>
+          <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;" />
+          <p style="font-size: 14px; color: #666;"><strong>Please do not reply to this email, as it is not monitored.</strong></p>
+          <p style="font-size: 14px; color: #666;"><strong>Thank you,<br>EduSpace Team</strong></p>
+        </div>
+      `,
     };
+    
+    
+    
 
     await transporter.sendMail(mailOptions);
     res.status(200).json({success:true,message: "Reset email sent." });
@@ -68,7 +86,7 @@ export const resetPassword = async (req, res) => {
       resetPasswordToken: token,
       resetPasswordExpires: { $gt: Date.now() },
     });
-    if (!user) return res.status(400).json({success:false,message: "Invalid token."});
+    if (!user) return res.status(400).json({success:false,message: "Invalid token "});
 
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
