@@ -5,7 +5,7 @@ import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js"; 
 import facultyRoutes from "./routes/facultyRoutes.js";
-import studentRoutes from "./routes/studentRoutes.js"
+import studentRoutes from "./routes/studentRoutes.js";
 dotenv.config();
 const app = express();
 app.use(express.json());
