@@ -10,7 +10,9 @@ import dotenv from "dotenv";
 import bcrypt from "bcrypt";
 import User from "../models/User.js";
 import Faculty from "../models/Faculty.js";
+import Batch from "../models/Batch.js";
 import { transporter } from "../config/nodemailer.js";
+import Student from "../models/Student.js";
 
 dotenv.config();
 
@@ -162,30 +164,70 @@ router.post("/upload-batch", upload.single("csvFile"), async (req, res) => {
 });
 
 
-router.post("/upload-studentbatch",upload.single("csvFile"),async(req,res)=>{
+router.post("/upload-studentbatch", upload.single("csvFile"), async (req, res) => {
   const success = [];
   const error = [];
-  try{
+  try {
     const uploadResult = await uploadToCloudinary(req.file.buffer);
-    console.log("File uploaded to Cloudinary:", uploadResult.url);
     const parsedData = await parseCsvFile(req.file.buffer);
-    const {batchName}=req.body;
-    console.log(batchName);
-    console.log(parsedData);
-    for(let i=0;i<parsedData.length;i++){
-      const obj={
-        id:parsedData[i][0],
-        name:parsedData[i][1],
-        email:parsedData[i][2],
-        password:"12345678",
-        department:parsedData[i][3],
+    const { batchName } = req.body;
+    for (let i = 0; i < parsedData.length; i++) {
+      const obj = {
+        id: parsedData[i][0],
+        name: parsedData[i][1],
+        email: parsedData[i][2],
+        password: "12345678",
+        department: parsedData[i][3],
       };
-      const {id,name,email,password,department}=obj;
-      if(!id || !name || !email || !password || !department){
-        error.push({ location: email || `Row ${i+1}`, message: "Missing Attributes" });
+      const { id, name, email, password, department } = obj;
+      if (!id || !name || !email || !password || !department) {
+        error.push({ location: email || `Row ${i + 1}`, message: "Missing Attributes" });
         continue;
       }
-
+      try {
+        const existingUser = await User.findOne({ email });
+        if (!existingUser) {
+          const hashedPassword = await bcrypt.hash(password, 10);
+          const user = new User({ name, email, password: hashedPassword, role:"student" });
+          await user.save();
+          const batch=new Batch({batchName, students: [{id:id,name:name,email:email,department:department}]});
+          await batch.save();
+          const student=new Student({id,name,email,department,batchName});
+          await student.save();
+          const mailOptions = {
+            from: process.env.EMAIL,
+            to: email,
+            subject: "Welcome to EduSpace Portal - Student Registration Confirmation",
+            html: `
+              <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
+                <h2 style="color: #444; font-weight: bold;">Welcome to EduSpace!</h2>
+                <p><strong>Dear ${name},</strong></p>
+                <p><strong>Congratulations! You have been successfully registered as a student on the EduSpace portal.</strong></p>
+                <div style="text-align: center; margin: 20px 0;">
+                  <a href="http://localhost:3000/login" style="display: inline-block; padding: 10px 20px; font-size: 16px; font-weight: bold; color: #fff; background-color: #007BFF; text-decoration: none; border-radius: 4px;">Login to EduSpace</a>
+                </div>
+                <p><strong>If the button above doesn’t work, click the link below to log in:</strong></p>
+                <p style="word-wrap: break-word; font-weight: bold; color: #007BFF;">http://localhost:3000/login</p>
+                <p><strong>To access your account, please use the following credentials:</strong></p>
+                <ul style="list-style-type: none; padding-left: 0;">
+                  <li><strong>Email:</strong> ${email}</li>
+                  <li><strong>Temporary Password:</strong> ${password}</li>
+                </ul>
+                <p><strong>For security reasons, please update your password upon first login.</strong></p>
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;" />
+                <p style="font-size: 14px; color: #666;"><strong>Please do not reply to this email, as it is not monitored.</strong></p>
+                <p style="font-size: 14px; color: #666;"><strong>Best Regards,<br>EduSpace Team</strong></p>
+              </div>
+            `,
+          };
+          await transporter.sendMail(mailOptions);
+          success.push(email);
+        } else {
+          error.push({ location: email, message: "User already exists." });
+        }
+      } catch (err) {
+        error.push({ location: email, message: "Error saving user: " + err.message });
+      }
     }
     res.status(200).json({
       message: "File uploaded and parsed successfully!",
@@ -193,10 +235,9 @@ router.post("/upload-studentbatch",upload.single("csvFile"),async(req,res)=>{
       success,
       error,
     });
-  }
-  catch (error) {
+  } catch (error) {
     res.status(500).json({ success: false, message: "Failed to upload batch." });
-}
-})
+  }
+});
 
 export default router;
