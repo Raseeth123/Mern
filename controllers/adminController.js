@@ -3,18 +3,22 @@ import Faculty from "../models/Faculty.js";
 import bcrypt from "bcryptjs";
 import { transporter } from "../config/nodemailer.js";
 export const addFaculty = async (req, res) => {
-  const { name, email, password, department } = req.body;
+  const {id,name, email, department } = req.body;
 
-  if (!name || !email || !password || !department) {
+  if (!id || !name || !email || !department) {
     return res.status(400).json({ message: "All fields are required." });
   }
 
   try {
     const existingUser = await User.findOne({ email });
+    const existingFaculty = await Faculty.findOne({ $or: [{ email }, { id }] });
     if (existingUser) {
-      return res.status(400).json({ message: "Email is already in use." });
+      return res.status(400).json({success:true,message: "Email is already in use." });
     }
-    const hashedPassword = await bcrypt.hash(password, 10);
+    else if(existingFaculty){
+      return res.status(400).json({success:true,message: "Faculty Id or Email is already present." });
+    }
+    const hashedPassword = await bcrypt.hash("12345678", 10);
 
     const newUser = new User({
       name,
@@ -24,6 +28,7 @@ export const addFaculty = async (req, res) => {
     });
     await newUser.save();
     const newFaculty = new Faculty({
+      id,
       name,
       email,
       department,
@@ -47,7 +52,7 @@ export const addFaculty = async (req, res) => {
           <p><strong>To get started, please use the following credentials:</strong></p>
           <ul style="list-style-type: none; padding-left: 0;">
             <li><strong>Email:</strong> ${email}</li>
-            <li><strong>Temporary Password:</strong> ${password}</li>
+            <li><strong>Temporary Password:</strong>12345678</li>
           </ul>
           <p><strong>For security purposes, we recommend updating your password upon first login.</strong></p>
           <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;" />
