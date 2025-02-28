@@ -3,6 +3,62 @@ import { verifyRole } from "../middlewares/verifyRole.js";
 import { transporter } from "../config/nodemailer.js";
 import Course from "../models/Course.js";
 import User from "../models/User.js"; 
+import CourseMaterial from "../models/CourseMaterial.js";
+import multer from "multer";
+import path from "path";
+import { v2 as cloudinary } from "cloudinary";
+import streamifier from "streamifier";
+import dotenv from "dotenv";
+import bcrypt from "bcrypt";
+import mongoose from "mongoose";
+dotenv.config();
+
+
+cloudinary.config({
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.API_KEY,
+  api_secret: process.env.API_SECRET,
+});
+
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  // Accept all file types
+});
+
+const uploadToCloudinary = (fileBuffer, originalFilename) => {
+  // Extract file extension to preserve it in Cloudinary
+  const fileExtension = path.extname(originalFilename);
+  const publicId = `file_uploads/${Date.now()}_${path.basename(originalFilename, fileExtension)}`;
+  
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: "auto", // Allow any file type detection
+        folder: "file_uploads",
+        public_id: publicId,
+        use_filename: true,
+        unique_filename: true,
+        format: fileExtension.replace('.', ''), // Preserve file extension
+      },
+      (error, result) => {
+        if (error) {
+          console.error("Cloudinary Upload Error:", error);
+          reject(error);
+        } else {
+          resolve({
+            url: result.secure_url,
+            originalFilename,
+            format: fileExtension,
+            resource_type: result.resource_type
+          });
+        }
+      }
+    );
+    streamifier.createReadStream(fileBuffer).pipe(uploadStream);
+  });
+};
+
 
 const router = express.Router();
 
@@ -61,7 +117,7 @@ router.get("/course/:courseId", verifyRole("faculty"), async (req, res) => {
 
 router.post("/course/:courseId/add-student", verifyRole("faculty"), async (req, res) => {
   const { courseId } = req.params;
-  const { email } = req.body; // Expecting an array of emails
+  const { email } = req.body; 
   const errors = [];
   const addedStudents = [];
 
@@ -135,7 +191,158 @@ router.post("/course/:courseId/add-student", verifyRole("faculty"), async (req, 
   });
 });
 
+router.post("/add-materials", upload.single("fileUrl"), async (req, res) => {
+  try {
+    const { courseId, CO, title, description } = req.body;
+    
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "File is required." });
+    }
+    
+    // Check if all required fields are present
+    if (!courseId || !CO || !title) {
+      return res.status(400).json({ success: false, message: "Course ID, CO, and title are required." });
+    }
+    
+    // Upload file to Cloudinary
+    const fileUploadResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+    console.log("File uploaded to Cloudinary:", fileUploadResult);
+    
+    // Find or create course material document
+    let courseMaterial = await CourseMaterial.findOne({ courseId });
+    
+    //Prepare the material object with ALL required fields
+    const materialObject = { 
+      CO, 
+      title, 
+      description: description || "", // Default to empty string if not provided
+      fileUrl: fileUploadResult.url
+    };
+    
+    if (!courseMaterial) {
+    //Create new course material document
+      courseMaterial = new CourseMaterial({
+        courseId,
+        materials: [materialObject]
+      });
+    } else {
+     // Add to existing course material document
+      courseMaterial.materials.push(materialObject);
+    }
+    
+     await courseMaterial.save();
+    
+     // Log successful save
+    console.log("Course material saved successfully:", {
+      courseId,
+      CO,
+      title,
+    });
+    
+    res.status(201).json({ success: true, message: "Course material added successfully!" , material:materialObject });
+  } catch (error) {
+    console.error("Error adding course material:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error adding course material", 
+      error: error.message,
+      details: error.errors ? Object.keys(error.errors).map(key => ({
+        path: key,
+        message: error.errors[key].message
+      })) : null
+    });
+  }
+});
 
+// Add a route to download files
+router.get("/course-materials/:courseId", async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    
+    // Validate courseId
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid course ID format" 
+      });
+    }
+    
+    // Find course materials
+    const courseMaterial = await CourseMaterial.findOne({ courseId });
+    
+    if (!courseMaterial) {
+      return res.status(200).json({ 
+        success: true, 
+        message: "No materials found for this course", 
+        materials: [] 
+      });
+    }
+    
+    // Return the materials array
+    res.status(200).json({ 
+      success: true, 
+      materials: courseMaterial.materials 
+    });
+    
+  } catch (error) {
+    console.error("Error fetching course materials:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error fetching course materials", 
+      error: error.message 
+    });
+  }
+});
+
+
+router.delete("/delete-material/:courseId/:materialId", async (req, res) => {
+  try {
+    const { courseId, materialId } = req.params;
+    
+    // Validate IDs
+    if (!mongoose.Types.ObjectId.isValid(courseId) || !mongoose.Types.ObjectId.isValid(materialId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid ID format" 
+      });
+    }
+    
+    const courseMaterial = await CourseMaterial.findOne({ courseId });
+    
+    if (!courseMaterial) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Course material not found" 
+      });
+    }
+    
+    const materialIndex = courseMaterial.materials.findIndex(
+      material => material._id.toString() === materialId
+    );
+    
+    if (materialIndex === -1) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Material not found in this course" 
+      });
+    }
+    const fileUrl = courseMaterial.materials[materialIndex].fileUrl;
+    courseMaterial.materials.splice(materialIndex, 1);
+    await courseMaterial.save();
+    res.status(200).json({ 
+      success: true, 
+      message: "Material deleted successfully" 
+    });
+    
+  } catch (error) {
+    console.error("Error deleting course material:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Error deleting course material", 
+      error: error.message 
+    });
+  }
+});
 
 
 export default router;
