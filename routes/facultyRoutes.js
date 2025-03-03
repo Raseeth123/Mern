@@ -11,6 +11,8 @@ import streamifier from "streamifier";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
 import mongoose from "mongoose";
+import Assignment from "../models/Assignment.js";
+import { request } from "http";
 dotenv.config();
 
 
@@ -61,6 +63,7 @@ const uploadToCloudinary = (fileBuffer, originalFilename) => {
 
 
 const router = express.Router();
+const CO_PATTERN = /^CO-\d+$/;
 
 router.post("/create-course", verifyRole("faculty"), async (req, res) => {
   const { title, description, department } = req.body;
@@ -203,7 +206,13 @@ router.post("/add-materials", upload.single("fileUrl"), async (req, res) => {
     if (!courseId || !CO || !title) {
       return res.status(400).json({ success: false, message: "Course ID, CO, and title are required." });
     }
-    
+    if (!CO_PATTERN.test(CO)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Course Outcome (CO) format. Use CO-1, CO-2, etc.",
+      });
+    }
+
     // Upload file to Cloudinary
     const fileUploadResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
     console.log("File uploaded to Cloudinary:", fileUploadResult);
@@ -340,6 +349,151 @@ router.delete("/delete-material/:courseId/:materialId", async (req, res) => {
       success: false, 
       message: "Error deleting course material", 
       error: error.message 
+    });
+  }
+});
+
+
+router.post("/add-assignments", async (req, res) => {
+  try {
+    const { courseId, co, title, description, dueDate } = req.body;
+
+    if (!courseId || !co || !title || !dueDate) {
+      return res.status(400).json({
+        success: false,
+        message: "courseId, co, title, and dueDate are required.",
+      });
+    }
+
+    if (!CO_PATTERN.test(co)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid Course Outcome (CO) format. Use CO-1, CO-2, etc.",
+      });
+    }
+
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found.",
+      });
+    }
+
+    const assignment = {
+      co,
+      title,
+      description,
+      dueDate,
+      submissions: [],
+    };
+
+    course.assignments.push(assignment);
+    await course.save();
+
+    const assignmentSchema = new Assignment({
+      co,
+      title,
+      description,
+      dueDate,
+      submissions: [],
+    });
+    await assignmentSchema.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "Assignment added successfully.",
+      assignment,
+    });
+  } catch (error) {
+    console.error("Error adding assignment:", error);
+    return res.status(500).json({
+      success: false,
+      message: "An error occurred while adding the assignment.",
+      error: error.message,
+    });
+  }
+});
+
+
+router.get("/course-assignments/:courseId", async (req, res) => {
+  try{
+    const {courseId}=req.params;
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid course ID format" 
+      });
+    }
+    const course=await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Course not found" 
+      });
+    }
+    res.status(200).json({
+      success: true,
+      assignments: course.assignments
+    });
+  }
+  catch(error){
+    console.error("Error fetching assignments:",error);
+    res.status(500).json({
+      success:false,
+      message: "Error fetching assignments", 
+      error: error.message 
+    })
+  }
+});
+
+
+router.delete("/delete-assignment/:courseId/:assignmentId", async (req, res) => {
+  try {
+    const { courseId, assignmentId } = req.params;
+
+    // Validate IDs
+    if (!mongoose.Types.ObjectId.isValid(courseId) || !mongoose.Types.ObjectId.isValid(assignmentId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid ID format",
+      });
+    }
+
+    // Find the course
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found",
+      });
+    }
+
+    // Find the assignment within the course
+    const assignmentIndex = course.assignments.findIndex(
+      (assignment) => assignment._id.toString() === assignmentId
+    );
+    if (assignmentIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: "Assignment not found in this course",
+      });
+    }
+
+    // Remove the assignment
+    course.assignments.splice(assignmentIndex, 1);
+    await course.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Assignment deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting course assignment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error deleting assignment",
+      error: error.message,
     });
   }
 });
