@@ -391,15 +391,6 @@ router.post("/add-assignments", async (req, res) => {
     course.assignments.push(assignment);
     await course.save();
 
-    const assignmentSchema = new Assignment({
-      co,
-      title,
-      description,
-      dueDate,
-      submissions: [],
-    });
-    await assignmentSchema.save();
-
     return res.status(201).json({
       success: true,
       message: "Assignment added successfully.",

@@ -28,7 +28,7 @@ router.get("/course/:courseId", verifyRole("student"), async (req, res) => {
       if (!isStudentEnrolled) {
         return res.status(403).json({ success: false, message: "Access denied. You are not enrolled in this course." });
       }
-      res.json({ success: true, course });
+      res.json({ success: true, message:course });
     } catch (error) {
       console.error(error);
       res.status(500).json({ success: false, message: "Server error. Please try again later." });
