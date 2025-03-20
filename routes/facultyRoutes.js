@@ -13,6 +13,7 @@ import bcrypt from "bcrypt";
 import mongoose from "mongoose";
 import Assignment from "../models/Assignment.js";
 import { request } from "http";
+import Faculty from "../models/Faculty.js";
 dotenv.config();
 
 
@@ -113,10 +114,27 @@ router.get("/course/:courseId", verifyRole("faculty"), async (req, res) => {
 
     res.status(200).json({ success: true, course });
   } catch (error) {
-    console.error(error);
+    console.error(error);  
     res.status(500).json({ success: false, message: "Failed to fetch course details", error: error.message });
   }
 });
+
+
+router.get("/details/:facultyId", verifyRole("faculty"), async (req, res) => {
+  const { facultyId } = req.params;
+  try {
+    const faculty = await User.findById(facultyId);
+    if (!faculty) {
+      console.log("Faculty not found for ID:", facultyId); 
+      return res.status(404).json({ success: false, message: "Faculty not found" });
+    }
+    return res.status(200).json({ success: true, faculty });
+  } catch (error) {
+    console.error("Error fetching faculty details:", error); 
+    res.status(500).json({ success: false, message: "Failed to fetch faculty details", error: error.message });
+  }
+});
+
 
 router.post("/course/:courseId/add-student", verifyRole("faculty"), async (req, res) => {
   const { courseId } = req.params;
